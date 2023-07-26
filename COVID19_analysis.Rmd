@@ -1,0 +1,147 @@
+---
+title: "Report on COVID19 Data"
+author: "Kodai.F"
+date: "2023-07-24"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analyzing the COVID-19 trends data
+
+This is the final report for CU boulder's "Data Science as a Field" class, which analyzes COVID-19 infection trends.The data is from <https://github.com/CSSEGISandData/COVID-19/blob/master/csse_covid_19_data/csse_covid_19_time_series/>.
+
+```{r imports, echo = FALSE}
+library(tidyverse)
+library(lubridate)
+library(tidyr)
+```
+
+```{r url}
+url_in <- "https://github.com/CSSEGISandData/COVID-19/blob/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_names <- c("time_series_covid19_confirmed_global.csv?raw=true",
+                "time_series_covid19_deaths_global.csv?raw=true",
+                "time_series_covid19_confirmed_US.csv?raw=true",
+                "time_series_covid19_deaths_US.csv?raw=true")
+urls <- str_c(url_in, file_names)
+```
+
+```{r, message=FALSE}
+global_cases <- read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+US_cases <- read_csv(urls[3])
+US_deaths <- read_csv(urls[4])
+```
+
+### Cleaning the data
+
+```{r cleaning global_cases}
+global_cases <- global_cases %>%
+  pivot_longer(cols = -c('Province/State', 'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "cases") %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat, Long))
+```
+
+```{r cleaning global_deaths}
+global_deaths <- global_deaths %>%
+  pivot_longer(cols = -c('Province/State', 'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "deaths") %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat, Long))
+```
+
+### Creating new vectors
+
+```{r creating Japan_cases & Japan_deaths, warning = FALSE}
+Japan_cases <- global_cases %>%
+  filter(`Country/Region` == 'Japan')
+Japan_cases
+
+Japan_deaths <- global_deaths %>%
+  filter(`Country/Region` == 'Japan')
+Japan_deaths
+
+Japan <- Japan_cases %>%
+  full_join(Japan_deaths) %>%
+  rename(Country_Region = 'Country/Region',
+         Province_State = 'Province/State') 
+```
+
+## Cumulative number of COVID-19 infections in Japan
+
+```{r analysis of COVID19 in Japan 1}
+Japan %>%
+  filter(cases > 0) %>%
+  ggplot(aes(x = date, y = cases)) +
+  geom_line(aes(color = "cases")) + 
+  geom_point(aes(color = "cases")) +
+  geom_line(aes(y = deaths, color = "deaths")) +
+  geom_point(aes(y = deaths, color = "deaths")) +
+  labs(title = "Cumulative number of COVID19 infections in Japan", y = NULL)
+```
+
+## Trends in the number of new cases of COVID-19 infection
+
+```{r creating new_cases & new_deaths, warning = FALSE}
+Japan <- Japan %>%
+  mutate(new_cases = cases - lag(cases),
+         new_deaths = deaths - lag(deaths)) %>%
+  # Replace NA
+  replace_na(list(new_cases = 2, new_deaths = 0))
+```
+
+```{r, analysis of COVID19 in Japan 2, warning = FALSE}
+Japan %>%
+  filter(cases > 0) %>%
+  ggplot(aes(x = date, y = new_cases)) +
+  geom_line(aes(color = "new_cases")) + 
+  geom_line(aes(y = new_deaths, color = "new_deaths")) +
+  labs(title = "Trends in COVID-19 infections in Japan", y = NULL)
+```
+
+In Japan, the epidemic of COVID-19 infection experienced several waves, with a peak in the number of new daily infections in mid-2022.
+
+### Modeling(Correlation between the number of new infections and deaths)
+
+As the number of new infections increases, the number of deaths also increases.
+
+```{r}
+h <- ggplot(data = Japan)+
+  geom_point(mapping = aes(x = new_cases, y = new_deaths))+
+  geom_smooth(mapping = aes(x = new_cases, y = new_deaths), method = 'lm')
+h
+```
+
+## Comparison Japan with USA
+
+To compare data from Japan and the U.S., the number of new infections in Japan and the U.S. was divided by their respective populations. In other words, I calculated the number of infections per capita.
+
+```{r adding a vector to Japan}
+Japan <- Japan %>%
+  mutate(per_population = new_cases/125600000)
+```
+
+```{r creating a new table including the data of USA}
+US <- global_cases %>%
+  filter(`Country/Region` == 'US') %>%
+  mutate(new_cases = cases - lag(cases),
+         per_population = new_cases/334800000)
+```
+
+```{r plot, warning = FALSE}
+g <- ggplot(mapping = aes(x = date, y = per_population)) +
+  geom_line(data = Japan, mapping = aes(x = date, y = per_population, color = "Japan")) +
+  geom_line(data = US, mapping = aes(x = date, y = per_population, color = "US")) +
+  labs(title = "Comparison Japan with the U.S.", y = NULL)
+g
+```
+
+## Conclusion
+
+According to the COVID-19 data from Japan and the U.S., it is clear that the pandemic has had several waves of spread. Although the daily number of new cases suggests that the pandemic has passed its peak, it is possible that another wave of spread will occur in the future.
+There is a certain correlation between the number of new infections and the number of deaths, but it is not a strong correlation.
